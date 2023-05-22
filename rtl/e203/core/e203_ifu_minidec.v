@@ -28,7 +28,7 @@
 module e203_ifu_minidec(
 
   //////////////////////////////////////////////////////////////
-  // The IR stage to Decoder
+  // The IR stage to Decoder 对输入部分进行译码
   input  [`E203_INSTR_SIZE-1:0] instr,
   
   //////////////////////////////////////////////////////////////
@@ -47,16 +47,16 @@ module e203_ifu_minidec(
   output dec_divu  ,
   output dec_remu  ,
 
-  output dec_rv32,
-  output dec_bjp,
+  output dec_rv32,      //16还是32bit 
+  output dec_bjp,       //普通指令还是分支跳转指令
   output dec_jal,
   output dec_jalr,
-  output dec_bxx,
+  output dec_bxx,      //条件分支指令
   output [`E203_RFIDX_WIDTH-1:0] dec_jalr_rs1idx,
   output [`E203_XLEN-1:0] dec_bjp_imm 
 
   );
-
+//调用完整译码模块，不相关输入接0，输出悬空
   e203_exu_decode u_e203_exu_decode(
 
   .i_instr(instr),
@@ -69,7 +69,7 @@ module e203_ifu_minidec(
 
   .dbg_mode  (1'b0),
 
-  .dec_misalgn(),
+  .dec_misalgn(),  //无关的输出信号悬空
   .dec_buserr(),
   .dec_ilegl(),
 
