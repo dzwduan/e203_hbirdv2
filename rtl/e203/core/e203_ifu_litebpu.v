@@ -21,6 +21,7 @@
 //
 // Description:
 //  The Lite-BPU module to handle very simple branch predication at IFU
+//  静态预测，本质是获取不同情况下的op1和op2
 //
 // ====================================================================
 `include "e203_defines.v"
@@ -82,12 +83,15 @@ module e203_ifu_litebpu(
   //          is calculated based on current PC value and offset
 
   // The JAL and JALR is always jump, bxxx backward is predicted as taken  
+  // bxxx带条件直接跳转指令：如果立即数offset为负，预测发生跳转
   assign prdt_taken   = (dec_jal | dec_jalr | (dec_bxx & dec_bjp_imm[`E203_XLEN-1]));  
   // The JALR with rs1 == x1 have dependency or xN have dependency
+
   wire dec_jalr_rs1x0 = (dec_jalr_rs1idx == `E203_RFIDX_WIDTH'd0);
   wire dec_jalr_rs1x1 = (dec_jalr_rs1idx == `E203_RFIDX_WIDTH'd1);
   wire dec_jalr_rs1xn = (~dec_jalr_rs1x0) & (~dec_jalr_rs1x1);
 
+  // 检测rs1中索引为x1 reg时，是否存在相关性，涉及OITF和IR的写回目标reg
   wire jalr_rs1x1_dep = dec_i_valid & dec_jalr & dec_jalr_rs1x1 & ((~oitf_empty) | (jalr_rs1idx_cam_irrdidx));
   wire jalr_rs1xn_dep = dec_i_valid & dec_jalr & dec_jalr_rs1xn & ((~oitf_empty) | (~ir_empty));
 
@@ -96,6 +100,7 @@ module e203_ifu_litebpu(
   wire jalr_rs1xn_dep_ir_clr = (jalr_rs1xn_dep & oitf_empty & (~ir_empty)) & (ir_valid_clr | (~ir_rs1en));
 
   wire rs1xn_rdrf_r;
+  // 查看第一个读端口是否空闲 且 不存在资源冲突
   wire rs1xn_rdrf_set = (~rs1xn_rdrf_r) & dec_i_valid & dec_jalr & dec_jalr_rs1xn & ((~jalr_rs1xn_dep) | jalr_rs1xn_dep_ir_clr);
   wire rs1xn_rdrf_clr = rs1xn_rdrf_r;
   wire rs1xn_rdrf_ena = rs1xn_rdrf_set |   rs1xn_rdrf_clr;
@@ -103,9 +108,15 @@ module e203_ifu_litebpu(
 
   sirv_gnrl_dfflr #(1) rs1xn_rdrf_dfflrs(rs1xn_rdrf_ena, rs1xn_rdrf_nxt, rs1xn_rdrf_r, clk, rst_n);
 
+  //生成使用第一个读端口的使能信号，
   assign bpu2rf_rs1_ena = rs1xn_rdrf_set;
 
+  //如果存在RAW相关性，阻止IFU生成下一个pc
+  //在第一个读端口的时钟周期内，wait置1
   assign bpu_wait = jalr_rs1x1_dep | jalr_rs1xn_dep | rs1xn_rdrf_set;
+
+  // jal无条件直接跳转指令：一定会跳转，无需预测方向 对应 dec_jal
+  // jalr无条件间接跳转指令：rs1为基地址，可能与EXU存在RAW数据相关，x0需特判，对应dec_jalr_rs1x0，x1是ra return address，
 
   assign prdt_pc_add_op1 = (dec_bxx | dec_jal) ? pc[`E203_PC_SIZE-1:0]
                          : (dec_jalr & dec_jalr_rs1x0) ? `E203_PC_SIZE'b0
